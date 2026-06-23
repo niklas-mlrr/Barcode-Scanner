@@ -18,10 +18,17 @@ if [ ! -d "server/node_modules" ]; then
 fi
 
 if [[ "$(uname)" == "Darwin" ]]; then
-    # Open server and client in separate Terminal windows
-    osascript -e "tell app \"Terminal\" to do script \"cd '$DIR' && node server/server.js\""
-    sleep 1
-    osascript -e "tell app \"Terminal\" to do script \"cd '$DIR' && python3 client/client.py $*\""
+    # Open server and client in separate Terminal windows, offset and foregrounded
+    osascript <<EOF
+tell application "Terminal"
+    activate
+    do script "cd '$DIR' && node server/server.js"
+    set bounds of front window to {100, 100, 800, 500}
+    delay 1
+    do script "cd '$DIR' && python3 client/client.py $*"
+    set bounds of front window to {150, 150, 850, 550}
+end tell
+EOF
 else
     # Start server in background
     node server/server.js &
