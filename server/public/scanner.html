@@ -72,7 +72,7 @@
   <div id="reader"></div>
   <div id="status"><span class="dot" id="dot"></span><span id="status-text">Connecting...</span></div>
   <div class="controls" id="resend-row">
-    <button id="resend-btn" disabled><span class="label">Code erneut senden</span><span class="check">&#x2713; Gesendet</span></button>
+    <button id="resend-btn" disabled><span class="label">Code erneut senden</span><span class="check">&#x2713; Erneut gesendet</span></button>
   </div>
   <div class="controls" id="camera-row">
     <select id="camera-select"><option>Loading cameras...</option></select>
@@ -144,13 +144,6 @@
 
 
 
-    let resendConfirmTimeout = null;
-    function confirmSent() {
-      resendBtn.classList.add('sent');
-      clearTimeout(resendConfirmTimeout);
-      resendConfirmTimeout = setTimeout(() => resendBtn.classList.remove('sent'), 1200);
-    }
-
     function flashScan() {
       if (navigator.vibrate) navigator.vibrate(80);
       readerEl.classList.add('scan-success');
@@ -168,7 +161,7 @@
       statusEl.textContent = 'Sent: ' + value;
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'scan', value }));
       flashScan();
-      confirmSent();
+      resendBtn.classList.remove('sent');
     }
 
     // Resend last scanned code
@@ -179,7 +172,7 @@
         ws.send(JSON.stringify({ type: 'scan', value: lastSentValue }));
         statusEl.textContent = 'Sent: ' + lastSentValue;
         flashScan();
-        confirmSent();
+        resendBtn.classList.add('sent');
       } else {
         statusEl.textContent = 'Not connected — cannot resend';
       }
