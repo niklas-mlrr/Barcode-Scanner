@@ -18,8 +18,19 @@
       padding: 20px;
     }
     h1 { font-size: 1.2rem; font-weight: 600; margin-bottom: 16px; opacity: 0.8; }
-    #reader { width: 100%; max-width: 320px; border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 0px #4caf50; transition: box-shadow 0.6s ease-out; }
-    #reader.scan-success { box-shadow: 0 0 0 3px #4caf50; transition: none; }
+    #reader { position: relative; width: 100%; max-width: 320px; border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 0px #4caf50; transition: box-shadow 0.6s ease-out; }
+    #reader.scan-success { box-shadow: 0 0 0 4px #4caf50; transition: none; }
+    #scan-frame {
+      position: absolute; top: 50%; left: 50%;
+      width: 240px; height: 160px;
+      transform: translate(-50%, -50%);
+      border-radius: 8px;
+      pointer-events: none;
+      z-index: 5;
+      box-shadow: inset 0 0 0 0px #4caf50;
+      transition: box-shadow 0.6s ease-out;
+    }
+    #scan-frame.scan-success { box-shadow: inset 0 0 0 4px #4caf50; transition: none; }
     #status {
       margin-top: 16px;
       padding: 10px 16px;
@@ -69,7 +80,7 @@
 </head>
 <body>
   <h1>Barcode Scanner</h1>
-  <div id="reader"></div>
+  <div id="reader"><div id="scan-frame"></div></div>
   <div id="status"><span class="dot" id="dot"></span><span id="status-text">Connecting...</span></div>
   <div class="controls" id="resend-row">
     <button id="resend-btn" disabled><span class="label">Code erneut senden</span><span class="check">&#x2713; Erneut gesendet</span></button>
@@ -104,6 +115,7 @@
     const soundBtn = document.getElementById('sound-btn');
     const reloadBtn = document.getElementById('reload-btn');
     const readerEl = document.getElementById('reader');
+    const scanFrameEl = document.getElementById('scan-frame');
     let scanFlashTimeout = null;
 
     let audioCtx = null, audioBuffer = null;
@@ -147,8 +159,12 @@
     function flashScan() {
       if (navigator.vibrate) navigator.vibrate(80);
       readerEl.classList.add('scan-success');
+      scanFrameEl.classList.add('scan-success');
       clearTimeout(scanFlashTimeout);
-      scanFlashTimeout = setTimeout(() => readerEl.classList.remove('scan-success'), 1200);
+      scanFlashTimeout = setTimeout(() => {
+        readerEl.classList.remove('scan-success');
+        scanFrameEl.classList.remove('scan-success');
+      }, 1200);
     }
 
     function onScanSuccess(value) {
@@ -216,6 +232,8 @@
         );
         isCameraRunning = true;
         currentCameraId = cameraId;
+        // html5-qrcode's clear() empties #reader, so re-attach our overlay frame
+        if (!readerEl.contains(scanFrameEl)) readerEl.appendChild(scanFrameEl);
         isTorchOn = false;
         torchBtn.textContent = 'Light: off';
         torchBtn.classList.remove('torch-on');
