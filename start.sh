@@ -11,6 +11,12 @@ python3 -c "import websocket, pyautogui" 2>/dev/null || {
     pip3 install -r client/requirements.txt
 }
 
+# Install server Node dependencies if missing
+if [ ! -d "server/node_modules" ]; then
+    echo "Installing server dependencies..."
+    (cd server && npm install)
+fi
+
 if [[ "$(uname)" == "Darwin" ]]; then
     # Open server and client in separate Terminal windows
     osascript -e "tell app \"Terminal\" to do script \"cd '$DIR' && node server/server.js\""
