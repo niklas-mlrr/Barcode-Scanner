@@ -59,6 +59,11 @@
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     .torch-on { background: #4caf50 !important; }
     .sound-on { background: #4caf50 !important; }
+    #resend-btn { transition: background 0.2s, color 0.2s; }
+    #resend-btn.sent { background: #4caf50; color: #fff; }
+    #resend-btn .check { display: none; }
+    #resend-btn.sent .label { display: none; }
+    #resend-btn.sent .check { display: inline; }
     #reload-btn { padding: 12px 14px; font-size: 1.1rem; width: auto; }
   </style>
 </head>
@@ -67,7 +72,7 @@
   <div id="reader"></div>
   <div id="status"><span class="dot" id="dot"></span><span id="status-text">Connecting...</span></div>
   <div class="controls" id="resend-row">
-    <button id="resend-btn" disabled>Code erneut senden</button>
+    <button id="resend-btn" disabled><span class="label">Code erneut senden</span><span class="check">&#x2713; Gesendet</span></button>
   </div>
   <div class="controls" id="camera-row">
     <select id="camera-select"><option>Loading cameras...</option></select>
@@ -139,6 +144,20 @@
 
 
 
+    let resendConfirmTimeout = null;
+    function confirmSent() {
+      resendBtn.classList.add('sent');
+      clearTimeout(resendConfirmTimeout);
+      resendConfirmTimeout = setTimeout(() => resendBtn.classList.remove('sent'), 1200);
+    }
+
+    function flashScan() {
+      if (navigator.vibrate) navigator.vibrate(80);
+      readerEl.classList.add('scan-success');
+      clearTimeout(scanFlashTimeout);
+      scanFlashTimeout = setTimeout(() => readerEl.classList.remove('scan-success'), 1200);
+    }
+
     function onScanSuccess(value) {
       if (cooldown || value === lastValue) return;
       if (soundEnabled) playBeep();
@@ -148,10 +167,8 @@
       setTimeout(() => { cooldown = false; lastValue = ''; }, 2000);
       statusEl.textContent = 'Sent: ' + value;
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'scan', value }));
-      if (navigator.vibrate) navigator.vibrate(80);
-      readerEl.classList.add('scan-success');
-      clearTimeout(scanFlashTimeout);
-      scanFlashTimeout = setTimeout(() => readerEl.classList.remove('scan-success'), 1200);
+      flashScan();
+      confirmSent();
     }
 
     // Resend last scanned code
@@ -161,10 +178,8 @@
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'scan', value: lastSentValue }));
         statusEl.textContent = 'Sent: ' + lastSentValue;
-        if (navigator.vibrate) navigator.vibrate(80);
-        readerEl.classList.add('scan-success');
-        clearTimeout(scanFlashTimeout);
-        scanFlashTimeout = setTimeout(() => readerEl.classList.remove('scan-success'), 1200);
+        flashScan();
+        confirmSent();
       } else {
         statusEl.textContent = 'Not connected — cannot resend';
       }
