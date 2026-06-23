@@ -66,6 +66,9 @@
   <h1>Barcode Scanner</h1>
   <div id="reader"></div>
   <div id="status"><span class="dot" id="dot"></span><span id="status-text">Connecting...</span></div>
+  <div class="controls" id="resend-row">
+    <button id="resend-btn" disabled>Code erneut senden</button>
+  </div>
   <div class="controls" id="camera-row">
     <select id="camera-select"><option>Loading cameras...</option></select>
     <button id="reload-btn" title="Reload camera">&#x21BA;</button>
@@ -89,7 +92,9 @@
     connect();
 
     let lastValue = '', cooldown = false, html5QrCode = null, currentCameraId = null, isTorchOn = false, isCameraRunning = false, isRestarting = false, soundEnabled = false;
+    let lastSentValue = '';
     const cameraSelect = document.getElementById('camera-select');
+    const resendBtn = document.getElementById('resend-btn');
     const torchBtn = document.getElementById('torch-btn');
     const soundBtn = document.getElementById('sound-btn');
     const reloadBtn = document.getElementById('reload-btn');
@@ -138,6 +143,8 @@
       if (cooldown || value === lastValue) return;
       if (soundEnabled) playBeep();
       lastValue = value; cooldown = true;
+      lastSentValue = value;
+      resendBtn.disabled = false;
       setTimeout(() => { cooldown = false; lastValue = ''; }, 2000);
       statusEl.textContent = 'Sent: ' + value;
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'scan', value }));
@@ -146,6 +153,22 @@
       clearTimeout(scanFlashTimeout);
       scanFlashTimeout = setTimeout(() => readerEl.classList.remove('scan-success'), 1200);
     }
+
+    // Resend last scanned code
+    resendBtn.addEventListener('click', () => {
+      if (!lastSentValue) return;
+      if (soundEnabled) playBeep();
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'scan', value: lastSentValue }));
+        statusEl.textContent = 'Sent: ' + lastSentValue;
+        if (navigator.vibrate) navigator.vibrate(80);
+        readerEl.classList.add('scan-success');
+        clearTimeout(scanFlashTimeout);
+        scanFlashTimeout = setTimeout(() => readerEl.classList.remove('scan-success'), 1200);
+      } else {
+        statusEl.textContent = 'Not connected — cannot resend';
+      }
+    });
 
     // Load available cameras
     Html5Qrcode.getCameras().then(cameras => {
