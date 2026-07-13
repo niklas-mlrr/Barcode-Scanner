@@ -65,14 +65,62 @@
     #resend-btn.sent .label { display: none; }
     #resend-btn.sent .check { display: inline; }
     #reload-btn { padding: 12px 14px; font-size: 1.1rem; width: auto; }
+    #manual-input {
+      display: none;
+      width: 100%;
+      max-width: 320px;
+      padding: 20px 16px;
+      border: 2px solid #444;
+      border-radius: 12px;
+      background: #1e1e1e;
+      color: #fff;
+      font-size: 1.1rem;
+      outline: none;
+    }
+    #manual-input:focus { border-color: #4caf50; }
+    #manual-input.scan-success { border-color: #4caf50; box-shadow: 0 0 0 4px #4caf50; transition: none; }
+    .manual-mode #reader { display: none; }
+    .manual-mode #manual-input { display: block; }
+    #enter-icon {
+      width: 22px;
+      height: 18px;
+      fill: currentColor;
+      vertical-align: middle;
+      display: inline-block;
+    }
+    .manual-mode #torch-btn .torch-label { display: none; }
+    .manual-mode #torch-btn .enter-label { display: inline-flex; align-items: center; gap: 6px; }
+    #torch-btn .enter-label { display: none; }
+    #focus-warning {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background: #f44336;
+      color: #fff;
+      padding: 12px;
+      text-align: center;
+      font-weight: 600;
+      z-index: 100;
+    }
+    .show-warning #focus-warning { display: block; }
+    #mode-select { width: 100%; }
   </style>
 </head>
 <body>
   <h1>Barcode Scanner</h1>
   <div id="reader"></div>
+  <input id="manual-input" type="text" inputmode="text" autocomplete="off" placeholder="Barcode eingeben...">
   <div id="status"><span class="dot" id="dot"></span><span id="status-text">Connecting...</span></div>
   <div class="controls" id="resend-row">
     <button id="resend-btn" disabled><span class="label">Code erneut senden</span><span class="check">&#x2713; Erneut gesendet</span></button>
+  </div>
+  <div class="controls" id="mode-row">
+    <select id="mode-select">
+      <option value="camera" selected>Kamera</option>
+      <option value="manual">Manuelle Eingabe</option>
+    </select>
   </div>
   <div class="controls" id="camera-row">
     <select id="camera-select"><option>Loading cameras...</option></select>
@@ -80,7 +128,15 @@
   </div>
   <div class="controls" id="sound-row">
     <button id="sound-btn">Sound: off</button>
-    <button id="torch-btn">Light: off</button>
+    <button id="torch-btn">
+      <span class="torch-label">Light: off</span>
+      <span class="enter-label">
+        <svg id="enter-icon" viewBox="0 0 24 20">
+          <path d="M2 2 V14 H16 L12 10 M16 14 L12 18" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Eingeben
+      </span>
+    </button>
   </div>
 
   <script>
@@ -104,7 +160,12 @@
     const soundBtn = document.getElementById('sound-btn');
     const reloadBtn = document.getElementById('reload-btn');
     const readerEl = document.getElementById('reader');
+    const modeSelect = document.getElementById('mode-select');
+    const manualInput = document.getElementById('manual-input');
+    const torchLabel = torchBtn.querySelector('.torch-label');
+    const focusWarning = document.getElementById('focus-warning');
     let scanFlashTimeout = null;
+    let mode = 'camera';
 
     let audioCtx = null, audioBuffer = null;
 
@@ -146,9 +207,10 @@
 
     function flashScan() {
       if (navigator.vibrate) navigator.vibrate(80);
-      readerEl.classList.add('scan-success');
+      const target = mode === 'manual' ? manualInput : readerEl;
+      target.classList.add('scan-success');
       clearTimeout(scanFlashTimeout);
-      scanFlashTimeout = setTimeout(() => readerEl.classList.remove('scan-success'), 1600);
+      scanFlashTimeout = setTimeout(() => target.classList.remove('scan-success'), 1600);
     }
 
     function onScanSuccess(value) {
@@ -162,6 +224,87 @@
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'scan', value }));
       flashScan();
       resendBtn.classList.remove('sent');
+    }
+
+    function updateTorchButtonUI() {
+      if (mode === 'manual') {
+        torchBtn.classList.remove('torch-on');
+        torchBtn.disabled = false;
+        return;
+      }
+      torchLabel.textContent = isTorchOn ? 'Light: on' : 'Light: off';
+      torchBtn.classList.toggle('torch-on', isTorchOn);
+    }
+
+    async function setTorchOff() {
+      if (!isTorchOn) return;
+      const video = document.querySelector('#reader video');
+      const track = video?.srcObject?.getVideoTracks?.()[0];
+      if (track) {
+        try { await track.applyConstraints({ advanced: [{ torch: false }] }); } catch (e) {}
+      }
+      isTorchOn = false;
+      updateTorchButtonUI();
+    }
+
+    async function stopCamera() {
+      if (html5QrCode) {
+        try { await html5QrCode.stop(); } catch (e) {}
+        try { html5QrCode.clear(); } catch (e) {}
+        html5QrCode = null;
+      }
+      isCameraRunning = false;
+      currentCameraId = null;
+    }
+
+    function updateFocusWarning() {
+      if (mode !== 'manual') {
+        document.body.classList.remove('show-warning');
+        return;
+      }
+      const focused = document.activeElement === manualInput;
+      document.body.classList.toggle('show-warning', !focused);
+    }
+
+    function sendManualValue() {
+      const value = manualInput.value.trim();
+      if (!value) return;
+      if (soundEnabled) playBeep();
+      lastSentValue = value;
+      resendBtn.disabled = false;
+      statusEl.textContent = 'Sent: ' + value;
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'scan', value }));
+      flashScan();
+      resendBtn.classList.remove('sent');
+      manualInput.value = '';
+      manualInput.focus();
+      updateFocusWarning();
+    }
+
+    async function setMode(newMode) {
+      mode = newMode;
+      document.body.classList.toggle('manual-mode', mode === 'manual');
+      if (mode === 'manual') {
+        cameraSelect.disabled = true;
+        reloadBtn.disabled = true;
+        await setTorchOff();
+        await stopCamera();
+        manualInput.value = '';
+        updateTorchButtonUI();
+        manualInput.focus();
+        updateFocusWarning();
+        statusEl.textContent = ws && ws.readyState === WebSocket.OPEN ? 'Manuelle Eingabe bereit' : 'Reconnecting...';
+      } else {
+        cameraSelect.disabled = false;
+        reloadBtn.disabled = false;
+        document.body.classList.remove('show-warning');
+        updateTorchButtonUI();
+        const selectedId = cameraSelect.value;
+        if (selectedId && !cameraSelect.options[cameraSelect.selectedIndex]?.text?.includes('No cameras found')) {
+          currentCameraId = selectedId;
+          initScanner(selectedId);
+        }
+      }
     }
 
     // Resend last scanned code
@@ -186,7 +329,7 @@
         cameras[0];
       cameraSelect.innerHTML = cameras.map(c => `<option value="${c.id}" ${c === preferred ? 'selected' : ''}>${c.label}</option>`).join('');
       currentCameraId = preferred?.id;
-      initScanner(currentCameraId);
+      if (mode === 'camera') initScanner(currentCameraId);
     }).catch(err => {
       cameraSelect.innerHTML = '<option>No cameras found</option>';
       cameraSelect.disabled = true;
@@ -217,8 +360,7 @@
         isCameraRunning = true;
         currentCameraId = cameraId;
         isTorchOn = false;
-        torchBtn.textContent = 'Light: off';
-        torchBtn.classList.remove('torch-on');
+        updateTorchButtonUI();
         statusEl.textContent = ws && ws.readyState === WebSocket.OPEN ? 'Connected — ready to scan' : 'Reconnecting...';
         const video = document.querySelector('#reader video');
         if (video && video.srcObject) {
@@ -241,12 +383,15 @@
     cameraSelect.addEventListener('change', () => {
       initScanner(cameraSelect.value);
       isTorchOn = false;
-      torchBtn.textContent = 'Light: off';
-      torchBtn.classList.remove('torch-on');
+      updateTorchButtonUI();
     });
 
-    // Torch toggle
+    // Torch toggle / manual enter button
     torchBtn.addEventListener('click', async () => {
+      if (mode === 'manual') {
+        sendManualValue();
+        return;
+      }
       const video = document.querySelector('#reader video');
       if (!video || !video.srcObject) return;
       const track = video.srcObject.getVideoTracks()[0];
@@ -254,8 +399,7 @@
       try {
         await track.applyConstraints({ advanced: [{ torch: !isTorchOn }] });
         isTorchOn = !isTorchOn;
-        torchBtn.textContent = isTorchOn ? 'Light: on' : 'Light: off';
-        torchBtn.classList.toggle('torch-on', isTorchOn);
+        updateTorchButtonUI();
       } catch (e) {
         console.log('Torch not supported');
       }
@@ -266,8 +410,24 @@
       if (currentCameraId) initScanner(currentCameraId);
     });
 
+    // Mode selector
+    modeSelect.addEventListener('change', () => {
+      setMode(modeSelect.value);
+    });
+
+    // Manual input
+    manualInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        sendManualValue();
+      }
+    });
+    manualInput.addEventListener('focus', updateFocusWarning);
+    manualInput.addEventListener('blur', updateFocusWarning);
+
     // Auto-restart camera when phone wakes from standby
     document.addEventListener('visibilitychange', () => {
+      if (mode !== 'camera') return;
       if (!document.hidden && currentCameraId) {
         setTimeout(() => initScanner(currentCameraId), 300);
       }
@@ -275,13 +435,13 @@
 
     // Fallback: detect frozen/black video and auto-restart
     setInterval(() => {
-      if (document.hidden || isRestarting || !currentCameraId) return;
+      if (mode !== 'camera' || document.hidden || isRestarting || !currentCameraId) return;
       const video = document.querySelector('#reader video');
       if (video && (video.paused || video.ended || video.readyState < 2)) {
         initScanner(currentCameraId);
       }
     }, 3000);
-
   </script>
+  <div id="focus-warning">Vorsicht: Eingabefeld nicht fokussiert!</div>
 </body>
 </html>
