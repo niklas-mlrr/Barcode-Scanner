@@ -2,6 +2,7 @@
 # macOS/Linux launcher
 cd "$(dirname "$0")"
 DIR="$(pwd)"
+rm -f "$DIR/server/runtime/session.json"
 
 # Check dependencies
 if ! command -v node &>/dev/null; then echo "Error: Node.js not installed."; exit 1; fi
@@ -24,8 +25,7 @@ tell application "Terminal"
     activate
     do script "cd '$DIR' && node server/server.js"
     set bounds of front window to {100, 100, 800, 500}
-    delay 1
-    do script "cd '$DIR' && python3 client/client.py $*"
+    do script "cd '$DIR' && for i in {1..50}; do [ -f '$DIR/server/runtime/session.json' ] && break; sleep 0.1; done; test -f '$DIR/server/runtime/session.json' || { echo 'Server session file was not created.'; exit 1; }; python3 client/client.py --session-file '$DIR/server/runtime/session.json' $*"
     set bounds of front window to {150, 150, 850, 550}
 end tell
 EOF
@@ -33,9 +33,13 @@ else
     # Start server in background
     node server/server.js &
     SERVER_PID=$!
-    sleep 1
+    trap "kill $SERVER_PID 2>/dev/null" EXIT
+    for _ in $(seq 1 50); do
+        [ -f "server/runtime/session.json" ] && break
+        sleep 0.1
+    done
+    [ -f "server/runtime/session.json" ] || { echo "Server session file was not created."; exit 1; }
 
     # Start desktop client (foreground — Ctrl+C stops both)
-    trap "kill $SERVER_PID 2>/dev/null" EXIT
-    python3 client/client.py "$@"
+    python3 client/client.py --session-file "$DIR/server/runtime/session.json" "$@"
 fi

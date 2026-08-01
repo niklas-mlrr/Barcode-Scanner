@@ -86,13 +86,45 @@
   <script>
     const statusEl = document.getElementById('status-text');
     const dotEl = document.getElementById('dot');
-    let ws;
+    let ws, registered = false, pendingScan = null;
+
+    const scannerToken = new URLSearchParams(location.hash.slice(1)).get('s');
+
+    function setStatus(text, state = '') {
+      statusEl.textContent = text;
+      dotEl.className = `dot ${state}`;
+    }
+
+    function sendPending() {
+      if (!pendingScan || !registered || !ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ v: 2, type: 'scan', id: pendingScan.id, value: pendingScan.value }));
+    }
 
     function connect() {
-      ws = new WebSocket(`wss://${location.host}/`);
-      ws.onopen = () => { dotEl.className = 'dot ok'; statusEl.textContent = 'Connected — ready to scan'; };
-      ws.onclose = () => { dotEl.className = 'dot err'; statusEl.textContent = 'Disconnected — retrying...'; setTimeout(connect, 2000); };
-      ws.onerror = () => { dotEl.className = 'dot err'; statusEl.textContent = 'Connection error'; };
+      if (!scannerToken) { setStatus('Invalid scanner link — scan the current QR code', 'err'); return; }
+      registered = false;
+      ws = new WebSocket(`wss://${location.host}/ws`);
+      ws.onopen = () => ws.send(JSON.stringify({ v: 2, type: 'register', role: 'scanner', token: scannerToken }));
+      ws.onmessage = event => {
+        let msg;
+        try { msg = JSON.parse(event.data); } catch (_) { return; }
+        if (msg.v !== 2) return;
+        if (msg.type === 'registered') {
+          registered = true;
+          setStatus(pendingScan ? 'Reconnected — code retained; tap send to retry' : 'Connected — ready to scan', 'ok');
+        } else if (msg.type === 'delivery' && pendingScan && msg.id === pendingScan.id) {
+          pendingScan.status = msg.status;
+          if (msg.status === 'received') setStatus(`Sent: ${pendingScan.value} — waiting for desktop`, 'ok');
+          if (msg.status === 'typed') { setStatus(`Entered: ${pendingScan.value}`, 'ok'); pendingScan = null; }
+          if (msg.status === 'failed') setStatus('Desktop could not type code — retry manually', 'err');
+          if (msg.status === 'desktop_unavailable') setStatus('Desktop not connected — code retained', 'err');
+          if (msg.status === 'delivery_unknown') setStatus('Delivery uncertain — verify before scanning again', 'err');
+        } else if (msg.type === 'error') {
+          setStatus(`Server rejected scan: ${msg.code || 'error'}`, 'err');
+        }
+      };
+      ws.onclose = () => { registered = false; setStatus('Disconnected — retrying…', 'err'); setTimeout(connect, 2000); };
+      ws.onerror = () => setStatus('Connection error', 'err');
     }
     connect();
 
@@ -158,8 +190,9 @@
       lastSentValue = value;
       resendBtn.disabled = false;
       setTimeout(() => { cooldown = false; lastValue = ''; }, 2000);
-      statusEl.textContent = 'Sent: ' + value;
-      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'scan', value }));
+      pendingScan = { id: crypto.randomUUID(), value, status: 'new' };
+      setStatus('Sending…', 'ok');
+      sendPending();
       flashScan();
       resendBtn.classList.remove('sent');
     }
@@ -168,9 +201,16 @@
     resendBtn.addEventListener('click', () => {
       if (!lastSentValue) return;
       if (soundEnabled) playBeep();
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'scan', value: lastSentValue }));
-        statusEl.textContent = 'Sent: ' + lastSentValue;
+      if (registered && ws && ws.readyState === WebSocket.OPEN) {
+        if (!confirm('Send this code again? It may already have been entered on the desktop.')) {
+          setStatus('Retry cancelled — verify the desktop field first', 'err');
+          return;
+        }
+        // Explicit retry deliberately uses a NEW ID. Reusing a pending ID only
+        // asks the server for its old status and never reaches the desktop.
+        pendingScan = { id: crypto.randomUUID(), value: lastSentValue, status: 'new' };
+        sendPending();
+        setStatus('Retrying — verify for a possible duplicate', 'err');
         flashScan();
         resendBtn.classList.add('sent');
       } else {
@@ -219,7 +259,7 @@
         isTorchOn = false;
         torchBtn.textContent = 'Light: off';
         torchBtn.classList.remove('torch-on');
-        statusEl.textContent = ws && ws.readyState === WebSocket.OPEN ? 'Connected — ready to scan' : 'Reconnecting...';
+        statusEl.textContent = registered ? 'Connected — ready to scan' : 'Reconnecting...';
         const video = document.querySelector('#reader video');
         if (video && video.srcObject) {
           const track = video.srcObject.getVideoTracks()[0];

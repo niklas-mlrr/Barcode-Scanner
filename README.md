@@ -4,9 +4,9 @@ Scan barcodes on your phone, get them typed on your computer. A lightweight WebS
 
 ## How it Works
 
-1. **Server** (Node.js) – HTTPS + WebSocket server with self-signed certificate
+1. **Server** (Node.js) – HTTPS + authenticated WebSocket bridge with a self-signed certificate
 2. **Phone** – Browser-based scanner using the camera (`html5-qrcode`)
-3. **Desktop** – Python client that receives barcodes and types them as keyboard input
+3. **Desktop** – local Python client that receives authenticated barcodes and types them as keyboard input
 
 ```
 ┌─────────────┐        ┌──────────────┐        ┌─────────────┐
@@ -41,7 +41,7 @@ pip install -r requirements.txt
 ./start.sh
 ```
 
-On first run, the server generates a self-signed certificate and prints a QR code. Scan it with your phone to open the scanner.
+On first run, the server generates a self-signed certificate and prints a QR code. The QR contains a fresh scanner credential for this server run; scan it with your phone to open the scanner. The launcher passes a separate local-only credential to the desktop client automatically.
 
 ### Manual Start
 
@@ -54,12 +54,12 @@ npm start
 **Terminal 2 – Desktop Client:**
 ```bash
 cd client
-python3 client.py
+python3 client.py --session-file ../server/runtime/session.json
 ```
 
 **Phone:**
-- Scan the QR code shown in the server terminal, or
-- Navigate to `https://<server-ip>:3443`
+- Scan the QR code shown in the server terminal (required; it carries the current scanner credential), or
+- Open the complete QR URL including its `#s=...` fragment on the phone
 - Accept the self-signed certificate warning
 - Grant camera permission
 
@@ -85,9 +85,13 @@ python3 client.py --no-enter     # Don't press Enter after typing
 
 ## Security
 
-- Self-signed certificate auto-generated on first run
-- Certificate includes all local IPs as SANs (including Tailscale)
-- WebSocket connection between phone and desktop
+- Every start generates separate, random scanner and desktop credentials. Old QR codes stop working after restart.
+- The scanner credential stays in the QR URL fragment and is never sent in an HTTP request.
+- Only a desktop client on `localhost` with the separate desktop credential can receive scans; WLAN clients cannot register as a desktop or inject scan frames.
+- The Python client verifies the self-signed server certificate from the local session file. It does not disable TLS verification.
+- The server only serves an explicit list of scanner assets; certificates, keys, and runtime credentials are never static files.
+- The private key and the launcher-created `server/runtime/session.json` are local, ignored files. Do not copy or commit either one.
+- The phone reports whether a scan was accepted and typed. If a desktop disconnect makes delivery uncertain, verify manually before scanning again; keyboard automation cannot offer true exactly-once delivery across a crash.
 
 ## Project Structure
 

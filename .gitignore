@@ -1,5 +1,6 @@
 server/node_modules/
 server/cert.pem
 server/key.pem
+server/runtime/
 __pycache__/
 *.pyc
