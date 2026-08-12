@@ -278,6 +278,9 @@ async function main() {
   server.listen(PORT, () => {
     const url = `https://${localIPs[0]}:${PORT}/#s=${tokens.scannerToken}`;
     console.log(`\nBarcode server running at https://${localIPs[0]}:${PORT}`);
+    // Plain-text URL (machine-parseable) alongside the ASCII QR below, so
+    // wrapper launchers can render their own QR without parsing QR art.
+    console.log(`Scanner URL: ${url}`);
     console.log('\nScan this QR code with your phone to open the scanner:\n');
     qrcode.generate(url, { small: true });
     console.log(`\nDesktop client reads the local session file: ${sessionFile}`);
